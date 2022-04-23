@@ -90,7 +90,7 @@ def create_gold_distances(corpus):
     sen_length = [len(i) for i in corpus]
     max_length = max(sen_length)
 
-    for item in (corpus):
+    for item in tqdm(corpus):
         tokentree = item.to_tree()
         ete_tree = tokentree_to_ete(tokentree)
 
@@ -219,11 +219,13 @@ class L1DistanceLoss(nn.Module):
         return batch_loss, total_sents
 
 def fetch_sen_reps_lstm_tree(ud_parses: List[TokenList], model, tokenizer) -> Tensor:
+    print("fetching sentence reps, this may take a while...")
+    print("")
     representation_size = 650
     out = []
     sen_length = [len(i) for i in ud_parses]
     max_length = max(sen_length)
-    for sentence in ud_parses:
+    for sentence in tqdm(ud_parses):
         sent = torch.zeros((len(sentence), 1))
         for i, token in enumerate(sentence):
             sent[i] = tokenizer[str(token)]
@@ -257,7 +259,8 @@ def init_corpus_lstm(path, concat=False, cutoff=None):
     """
     corpus = parse_corpus(path)[:cutoff]
 
-    embs = fetch_sen_reps_lstm_tree(corpus, lstm, vocab)    
+    embs = fetch_sen_reps_lstm_tree(corpus, lstm, vocab)
+    print("moving on to getting distances")
     gold_distances = torch.stack(create_gold_distances(corpus))
     torch.save(embs, "tree_rep_lstm.pt")
     torch.save(gold_distances, "tree_rep_lstm_distance.pt")
@@ -282,7 +285,7 @@ def evaluate_probe(probe, _data):
 
 
 # Feel free to alter the signature of this method.
-def train(_data, control=False):
+def train(embs, distances, control=False):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     emb_dim = 650
     rank = 64
@@ -294,9 +297,8 @@ def train(_data, control=False):
     optimizer = optim.Adam(probe.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5,patience=1)
     loss_function =  L1DistanceLoss()
-    x, y = _data
-    x = x.to(device)
-    y = y.to(device)
+    x =embs
+    y = distances
     dev_losses = []
     dev_uuass = []
 
@@ -404,12 +406,12 @@ def init_corpus_control_lstm(path, concat=False, cutoff=None):
 
 if __name__ == '__main__':
     corpus = parse_corpus('data/sample/en_ewt-ud-train.conllu')
-    #train_data = torch.load("tree_rep_lstm.pt")
-    #train_dist = torch.load("tree_rep_lstm_distance.pt")
-    #train_data_control = torch.load('tree_rep_control_lstm.pt')
-    #train_dist_control = torch.load('tree_rep_control_lstm_distance.pt')
+    train_data = torch.load("tree_rep_lstm.pt")
+    train_dist = torch.load("tree_rep_lstm_distance.pt")
+    train_data_control = torch.load('tree_rep_control_lstm.pt')
+    train_dist_control = torch.load('tree_rep_control_lstm_distance.pt')
 
-    train_data = init_corpus_lstm(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    train_data_control = init_corpus_control_lstm(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    #train_data = init_corpus_lstm(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    #train_data_control = init_corpus_control_lstm(os.path.join('', 'data/en_ewt-ud-train.conllu'))
     probe = train(train_data, train_dist)
     probe_control = train(train_data_control, train_dist_control, True)
