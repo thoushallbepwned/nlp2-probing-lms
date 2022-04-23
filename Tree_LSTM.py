@@ -259,7 +259,8 @@ def init_corpus_lstm(path, concat=False, cutoff=None):
 
     embs = fetch_sen_reps_lstm_tree(corpus, lstm, vocab)    
     gold_distances = torch.stack(create_gold_distances(corpus))
-    
+    torch.save(embs, "tree_rep_lstm.pt")
+    torch.save(gold_distances, "tree_rep_lstm_distance.pt")
     return embs, gold_distances
 
 def evaluate_probe(probe, _data):
@@ -330,9 +331,9 @@ def train(_data, control=False):
         
     # test_loss, test_uuas = evaluate_probe(probe, _test_data)
     if control:
-        torch.save(probe, "Tree_LSTM_control.pt")  
+        torch.save(probe, "Tree_LSTM_control_local.pt")
     else:
-        torch.save(probe, "Tree_LSTM.pt")    
+        torch.save(probe, "Tree_LSTM_local.pt")
     return probe
 
 def create_gold_distances_control(corpus):
@@ -396,13 +397,19 @@ def init_corpus_control_lstm(path, concat=False, cutoff=None):
 
     embs = fetch_sen_reps_lstm_tree(corpus, lstm, vocab)    
     gold_distances = torch.stack(create_gold_distances_control(corpus))
-    
+    torch.save(embs, "tree_rep_control_lstm.pt")
+    torch.save(gold_distances, "tree_rep_control_lstm_distance.pt")
     return embs, gold_distances
 
 
 if __name__ == '__main__':
     corpus = parse_corpus('data/sample/en_ewt-ud-train.conllu')
+    #train_data = torch.load("tree_rep_lstm.pt")
+    #train_dist = torch.load("tree_rep_lstm_distance.pt")
+    #train_data_control = torch.load('tree_rep_control_lstm.pt')
+    #train_dist_control = torch.load('tree_rep_control_lstm_distance.pt')
+
     train_data = init_corpus_lstm(os.path.join('', 'data/en_ewt-ud-train.conllu'))
     train_data_control = init_corpus_control_lstm(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    probe = train(train_data)
-    probe_control = train(train_data_control, True)
+    probe = train(train_data, train_dist)
+    probe_control = train(train_data_control, train_dist_control, True)
