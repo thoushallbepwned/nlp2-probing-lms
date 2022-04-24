@@ -345,9 +345,9 @@ def init_corpus_control_gpt(path, concat=False, cutoff=None):
 
 
 #_test_data_gpt = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
-_test_data_gpt = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
+#_test_data_gpt = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
 
-torch.save(_test_data_gpt, "test_data_gpt_control.pt")
+#torch.save(_test_data_gpt, "test_data_gpt_control.pt")
 
 def evaluation(data, model):
     test_data = torch.load(data)
@@ -362,8 +362,8 @@ def evaluation(data, model):
 
 
 
-evaluation('test_data_gpt.pt', "Tree_GPT_local_cpu.pt")
-evaluation('test_data_gpt_control.pt', "Tree_GPT_control_local_cpu.pt")
+evaluation('tree_GPT_test.pt', "Tree_GPT_local.pt")
+evaluation('tree_GPT_test_control.pt', "Tree_GPT_control_local.pt")
 
 #_test_data_gpt = torch.load('test_data_gpt.pt')
 #probe_gpt = torch.load("Tree_GPT_local.pt", map_location=torch.device('cpu'))

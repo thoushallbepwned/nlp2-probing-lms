@@ -286,7 +286,8 @@ def evaluate_probe(probe, _data):
 
 # Feel free to alter the signature of this method.
 def train(embs, distances, control=False):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cpu')
     emb_dim = 650
     rank = 64
     lr = 10e-4
@@ -317,19 +318,20 @@ def train(embs, distances, control=False):
             batch_loss.backward()
             optimizer.step()
         
-        # dev_loss, dev_uuas = evaluate_probe(probe, _dev_data)
-        # dev_losses.append(dev_loss)
-        # dev_uuass.append(dev_uuas)
+         dev_loss, dev_uuas = evaluate_probe(probe, _dev_data)
+         dev_losses.append(dev_loss)
+         dev_uuass.append(dev_uuas)
 
         # Using a scheduler is up to you, and might require some hyper param fine-tuning
         #scheduler.step(dev_loss)  
     
         if epoch % 20 == 0 :
-            print(epoch)
-            # model.eval()
 
-            # print(f"Validation loss on batch {epoch}: {dev_loss}")
-            # print(f"UUA on batch {epoch}: {dev_uuas}")
+            print(epoch)
+            model.eval()
+
+            print(f"Validation loss on batch {epoch}: {dev_loss}")
+            print(f"UUA on batch {epoch}: {dev_uuas}")
         
     # test_loss, test_uuas = evaluate_probe(probe, _test_data)
     if control:
