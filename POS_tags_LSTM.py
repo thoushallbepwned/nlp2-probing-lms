@@ -36,21 +36,14 @@ def parse_corpus(filename: str) -> List[TokenList]:
 
     
 def fetch_sen_reps_lstm(ud_parses: List[TokenList], model, tokenizer) -> Tensor:
-    representation_size = 650
-    out = []
+    tokens = []
     for sentence in ud_parses:
-        sent = torch.zeros((len(sentence), 1))
-        for i, token in enumerate(sentence):
-            sent[i] = tokenizer[str(token)]
-        sent = sent.long()
-        hidden = model.init_hidden(len(sentence))
-        with torch.no_grad():
-            model.eval()
-            out_sentence = model(sent, hidden)
-
-        out += out_sentence.squeeze(1)
-    out = torch.stack(out)
-    return out    
+        for token in sentence:
+            tokens.append(tokenizer[token["form"]])
+    hidden = model.init_hidden(1)
+    with torch.no_grad():
+        output = model(torch.tensor([tokens]), hidden)
+    return output.squeeze(0)    
 
 def fetch_pos_tags(ud_parses: List[TokenList], pos_vocab=None) -> Tensor:
     pos_tags = list()
@@ -128,10 +121,10 @@ def pos_probe_linear(train_x, train_y, dev_x, dev_y, control=False):
     optimizer = torch.optim.Adam(classifier.parameters(), lr=lr)
 
     all_loss = []
-    train_x = train_x.to(device)
-    train_y = train_y.to(device)
-    dev_x = dev_x.to(device)
-    dev_y = dev_y.to(device)
+    # train_x = train_x.to(device)
+    # train_y = train_y.to(device)
+    # dev_x = dev_x.to(device)
+    # dev_y = dev_y.to(device)
 
     accuracy = torchmetrics.Accuracy()
     for epoch in range(epochs):
@@ -187,10 +180,10 @@ def pos_probe_non_linear(train_x, train_y, dev_x, dev_y, control=False):
     criterion = torch.nn.CrossEntropyLoss()
 
     optimizer = torch.optim.Adam(non_linear_classifier.parameters(), lr=lr)
-    train_x = train_x.to(device)
-    train_y = train_y.to(device)
-    dev_x = dev_x.to(device)
-    dev_y = dev_y.to(device)
+    # train_x = train_x.to(device)
+    # train_y = train_y.to(device)
+    # dev_x = dev_x.to(device)
+    # dev_y = dev_y.to(device)
 
     all_loss = []
 
@@ -259,12 +252,12 @@ if __name__ == '__main__':
         os.path.join('data', 'sample' if use_sample else '', 'en_ewt-ud-test.conllu'),
         pos_vocab=train_vocab_control
     )
-    classifier = pos_probe_linear(train_x, train_y, dev_x, dev_y)
-    # classifier.eval()
-    # output_test = classifier(test_x)
-    # test_acc = accuracy(output_test, test_y)
-    # print("The test accuracy is",test_acc.item())
-    non_linear_classifier = pos_probe_non_linear(train_x, train_y, dev_x, dev_y)
+    # classifier = pos_probe_linear(train_x, train_y, dev_x, dev_y)
+    # # classifier.eval()
+    # # output_test = classifier(test_x)
+    # # test_acc = accuracy(output_test, test_y)
+    # # print("The test accuracy is",test_acc.item())
+    # non_linear_classifier = pos_probe_non_linear(train_x, train_y, dev_x, dev_y)
     # non_linear_classifier.eval()
     # output_test = non_linear_classifier(test_x)
     # test_acc = accuracy(output_test, test_y)
