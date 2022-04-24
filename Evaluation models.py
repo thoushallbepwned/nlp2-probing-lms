@@ -5,6 +5,12 @@ from typing import List
 from conllu import parse_incr, TokenList
 import os
 from transformers import GPT2Tokenizer, GPT2LMHeadModel
+from ete3 import Tree as EteTree
+from ete3 import Tree
+from scipy.sparse.csgraph import minimum_spanning_tree
+from torch import optim
+from collections import defaultdict
+from lstm.model import RNNModel
 
 model = GPT2LMHeadModel.from_pretrained('distilgpt2')
 tokenizer = GPT2Tokenizer.from_pretrained('distilgpt2')
@@ -127,6 +133,42 @@ def evaluate_probe(probe, _data):
 from ete3 import Tree as EteTree
 
 
+def create_mst(distances):
+    distances = torch.triu(distances).detach().numpy()
+    mst = minimum_spanning_tree(distances).toarray()
+    mst[mst > 0] = 1.
+
+    return mst
+
+
+def edges(mst):
+    edges = set()
+    n_nodes = mst.shape[0]
+
+    for i in range(n_nodes):
+        for j in range(n_nodes):
+            if mst[i][j] != 0:
+                edges.add((i + 1, j + 1))
+
+    return edges
+
+
+def calc_uuas(pred_distances, gold_distances):
+    gold_distances = gold_distances[gold_distances[0, :] != -1]
+    valid_cols = [col_idx for col_idx, col in enumerate(torch.split(gold_distances, 1, dim=1)) if
+                  not torch.all(col == -1)]
+    gold_distances = gold_distances[:, valid_cols]
+    sen_len = gold_distances.shape[0]
+    pred_distances = pred_distances[:sen_len, :sen_len]
+    gold_mst = create_mst(gold_distances)
+    pred_mst = create_mst(pred_distances)
+    pred_edges = edges(pred_mst)
+    gold_edges = edges(gold_mst)
+    pred_in_gold = len(pred_edges.intersection(gold_edges))
+    uuas = pred_in_gold / len(gold_distances)
+
+    return uuas
+
 class FancyTree(EteTree):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, format=1, **kwargs)
@@ -147,6 +189,88 @@ def rec_tokentree_to_ete(tokentree):
         return idx
 
 
+import torch.nn as nn
+import torch
+
+
+class StructuralProbe(nn.Module):
+    """ Computes squared L2 distance after projection by a matrix.
+    For a batch of sentences, computes all n^2 pairs of distances
+    for each sentence in the batch.
+    """
+
+    def __init__(self, model_dim, rank, device="cpu"):
+        super().__init__()
+        self.probe_rank = rank
+        self.model_dim = model_dim
+
+        self.proj = nn.Parameter(data=torch.zeros(self.model_dim, self.probe_rank))
+
+        nn.init.uniform_(self.proj, -0.05, 0.05)
+        self.to(device)
+
+    def forward(self, batch):
+        """ Computes all n^2 pairs of distances after projection
+        for each sentence in a batch.
+        Note that due to padding, some distances will be non-zero for pads.
+        Computes (B(h_i-h_j))^T(B(h_i-h_j)) for all i,j
+        Args:
+          batch: a batch of word representations of the shape
+            (batch_size, max_seq_len, representation_dim)
+        Returns:
+          A tensor of distances of shape (batch_size, max_seq_len, max_seq_len)
+        """
+        transformed = torch.matmul(batch, self.proj)
+
+        batchlen, seqlen, rank = transformed.size()
+
+        transformed = transformed.unsqueeze(2)
+        transformed = transformed.expand(-1, -1, seqlen, -1)
+        transposed = transformed.transpose(1, 2)
+
+        diffs = transformed - transposed
+
+        squared_diffs = diffs.pow(2)
+        squared_distances = torch.sum(squared_diffs, -1)
+
+        return squared_distances
+
+
+class L1DistanceLoss(nn.Module):
+    """Custom L1 loss for distance matrices."""
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, predictions, label_batch, length_batch):
+        """ Computes L1 loss on distance matrices.
+        Ignores all entries where label_batch=-1
+        Normalizes first within sentences (by dividing by the square of the sentence length)
+        and then across the batch.
+        Args:
+          predictions: A pytorch batch of predicted distances
+          label_batch: A pytorch batch of true distances
+          length_batch: A pytorch batch of sentence lengths
+        Returns:
+          A tuple of:
+            batch_loss: average loss in the batch
+            total_sents: number of sentences in the batch
+        """
+        labels_1s = (label_batch != -1).float()
+        predictions_masked = predictions * labels_1s
+        labels_masked = label_batch * labels_1s
+        total_sents = torch.sum((length_batch != 0)).float()
+        squared_lengths = length_batch.pow(2).float()
+
+        if total_sents > 0:
+            loss_per_sent = torch.sum(torch.abs(predictions_masked - labels_masked), dim=(1, 2))
+            normalized_loss_per_sent = loss_per_sent / squared_lengths
+            batch_loss = torch.sum(normalized_loss_per_sent) / total_sents
+
+        else:
+            batch_loss = torch.tensor(0.0)
+
+        return batch_loss, total_sents
 def tokentree_to_ete(tokentree):
     newick_str = rec_tokentree_to_ete(tokentree)
 
@@ -154,11 +278,27 @@ def tokentree_to_ete(tokentree):
 
     return FancyTree(f"{newick_str};")
 
-_test_data_gpt = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
-probe_gpt = torch.load("Tree_GPT_local.pt", map_location=torch.device('cpu'))
-probe_gpt.eval()
+#_test_data_gpt = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
+#torch.save(_test_data_gpt, "test_data_gpt.pt")
 
-test_loss, test_uuas_gpt = evaluate_probe(probe_gpt, _test_data_gpt)
+def evaluation(data, model):
+    test_data = torch.load(data)
+    probe = torch.load(model, map_location = torch.device('cpu'))
+    probe.eval()
+    test_loss, test_uuas =evaluate_probe(probe, test_data)
+    print("Currently evaluating:", model)
+    print("")
+    print("the uuas score for the model is", test_uuas)
+    print("The test loss for the model is", test_loss)
+    return
+
+evaluation('test_data_gpt.pt', "Tree_GPT_local.pt")
+
+#_test_data_gpt = torch.load('test_data_gpt.pt')
+#probe_gpt = torch.load("Tree_GPT_local.pt", map_location=torch.device('cpu'))
+#probe_gpt.eval()
+
+#test_loss, test_uuas_gpt = evaluate_probe(probe_gpt, _test_data_gpt)
 
 
-print("The uuas score for the gpt model is", test_uuas_gpt)
+#print("The uuas score for the gpt model is", test_uuas_gpt)
