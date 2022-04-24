@@ -274,8 +274,7 @@ def init_corpus_gpt(path, concat=False, cutoff=None):
 
     embs = fetch_sen_reps_tree(corpus, model, tokenizer, concat=concat)
     gold_distances = torch.stack(create_gold_distances(corpus))
-    torch.save(embs, "tree_rep_no_control.pt")
-    torch.save(gold_distances, "tree_rep_distance.pt")
+
     return embs, gold_distances
 
 def evaluate_probe(probe, embs, distances):
@@ -299,6 +298,7 @@ def evaluate_probe(probe, embs, distances):
 
 # Feel free to alter the signature of this method.
 def train(data, distances, control=False):
+    #device = torch.device('cpu')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     emb_dim = 768
@@ -333,19 +333,19 @@ def train(data, distances, control=False):
             batch_loss.backward()
             optimizer.step()
         
-        # dev_loss, dev_uuas = evaluate_probe(probe, _dev_data)
-        # dev_losses.append(dev_loss)
-        # dev_uuass.append(dev_uuas)
+        dev_loss, dev_uuas = evaluate_probe(probe, _dev_data, distances)
+        dev_losses.append(dev_loss)
+        dev_uuass.append(dev_uuas)
 
         # Using a scheduler is up to you, and might require some hyper param fine-tuning
         #scheduler.step(dev_loss)  
     
         if epoch % 20 == 0 :
             print(epoch)
-            # model.eval()
+            model.eval()
 
-            # print(f"Validation loss on batch {epoch}: {dev_loss}")
-            # print(f"UUA on batch {epoch}: {dev_uuas}")
+            print(f"Validation loss on batch {epoch}: {dev_loss}")
+            print(f"UUA on batch {epoch}: {dev_uuas}")
         
     # test_loss, test_uuas = evaluate_probe(probe, _test_data)
     if control:
@@ -415,19 +415,25 @@ def init_corpus_control_gpt(path, concat=False, cutoff=None):
 
     embs = fetch_sen_reps_tree(corpus, model, tokenizer, concat=concat)
     gold_distances = torch.stack(create_gold_distances_control(corpus))
-    torch.save(embs, "tree_rep_control.pt")
-    torch.save(gold_distances, "tree_rep_control_distance.pt")
+    #torch.save(embs, "tree_rep_control.pt")
+    #torch.save(gold_distances, "tree_rep_control_distance.pt")
 
     return embs, gold_distances
 
 if __name__ == '__main__':
     "If you wanna run this stuff for the first time youll need to unhash the train_data lines"
     corpus = parse_corpus('data/sample/en_ewt-ud-train.conllu')
-    train_data = torch.load('tree_rep_no_control.pt')
-    train_dist = torch.load('tree_rep_distance.pt')
-    train_data_control = torch.load('tree_rep_control.pt')
-    train_dist_control = torch.load('tree_rep_control_distance.pt')
-    #train_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    #train_data_control = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    _dev_data = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    torch.save(_dev_data, "tree_GPT_dev_control.pt")
+    _test_data = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    torch.save(_dev_data, "tree_GPT_test_control.pt")
+    train_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    torch.save(train_data, "tree_GPT_train.pt")
+    train_data_control = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    torch.save(train_data_control, "tree_GPT_train_control.pt")
+    train_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    torch.save(train_data, "tree_GPT_train.pt")
+    train_data_control = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    torch.save(train_data, "tree_GPT_train_control.pt")
     probe = train(train_data, train_dist)
     probe_control = train(train_data_control, train_dist_control, True)
