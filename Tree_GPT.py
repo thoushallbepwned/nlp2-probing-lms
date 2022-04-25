@@ -119,27 +119,26 @@ def edges(mst):
 
     return edges
 
+
 def calc_uuas(pred_distances, gold_distances):
-    
-    gold_distances = gold_distances[gold_distances[0,:] != -1]
-    valid_cols = [col_idx for col_idx, col in enumerate(torch.split(gold_distances, 1, dim=1)) if not torch.all(col == -1)]
+    gold_distances = gold_distances[gold_distances[0, :] != -1]
+    valid_cols = [col_idx for col_idx, col in enumerate(torch.split(gold_distances, 1, dim=1)) if
+                  not torch.all(col == -1)]
     gold_distances = gold_distances[:, valid_cols]
     sen_len = gold_distances.shape[0]
-    pred_distances = pred_distances[:sen_len,:sen_len]
-    #print("This is how long the sentences is after takinga way the padding", len(pred_distances))
+    pred_distances = pred_distances[:sen_len, :sen_len]
     gold_mst = create_mst(gold_distances)
     pred_mst = create_mst(pred_distances)
     pred_edges = edges(pred_mst)
     gold_edges = edges(gold_mst)
     pred_in_gold = len(pred_edges.intersection(gold_edges))
+    try:
+        uuas = pred_in_gold / len(gold_edges)
+    except:
+        return 999
 
-    if len(gold_distances) == 1:
-        #print("found something thats length 0")
-        return None
-    else:
-        uuas = pred_in_gold/len(gold_distances-1)
-    
-        return uuas
+    return uuas
+
 
 class StructuralProbe(nn.Module):
     """ Computes squared L2 distance after projection by a matrix.
@@ -285,31 +284,25 @@ def init_corpus_gpt(path, concat=False, cutoff=None):
 
     return embs, gold_distances
 
-def evaluate_probe(probe, data):
-    probe.eval()
-    device = torch.device('cpu')
-    x, y = data[0], data[1]
-    print("testing the shape of the input here",x.shape, y.shape)
 
-    loss_function =  L1DistanceLoss()
+def evaluate_probe(probe, _data):
+    probe.eval()
+    x, y = _data
+    loss_function = L1DistanceLoss()
     loss_function.eval()
     uuas_list = []
-    
+
     with torch.no_grad():
         output = probe(x)
-        length_batch = torch.count_nonzero(x, dim=1)[:,0]
+        length_batch = torch.count_nonzero(x, dim=1)[:, 0]
         loss_score, _ = loss_function(output, y, length_batch)
         for i in range(output.shape[0]):
-           # print(len(output[i,:,:]))
-            uuas_list.append(calc_uuas(output[i,:,:], y[i,:,:]))
-
-        uuas_list = list(filter(None, uuas_list))
-        print("Printing the uuas list which has length", len(uuas_list))
-        #print(uuas_list)
-        uuas_score = sum(uuas_list)/len(uuas_list)
+            uuas = calc_uuas(output[i, :, :], y[i, :, :])
+            if uuas != 999:
+                uuas_list.append(uuas)
+        uuas_score = sum(uuas_list) / len(uuas_list)
 
     return loss_score, uuas_score
-
 
 # Feel free to alter the signature of this method.
 def train(data, dev_data, control=False):
@@ -319,9 +312,9 @@ def train(data, dev_data, control=False):
     print(device)
     emb_dim = 768
     rank = 64
-    lr = 10e-4
-    batch_size = 8
-    epochs = 200
+    lr = 10e-5
+    batch_size = 32
+    epochs = 300
 
     probe = StructuralProbe(emb_dim, rank, device=device)
     optimizer = optim.Adam(probe.parameters(), lr=lr)
@@ -348,6 +341,7 @@ def train(data, dev_data, control=False):
             output = probe(x_batch)
             length_batch = torch.count_nonzero(x_batch, dim=1)
             batch_loss, _ = loss_function(output, y_batch, length_batch[:,0])
+            #print(batch_loss)
 
             batch_loss.backward()
             optimizer.step()
