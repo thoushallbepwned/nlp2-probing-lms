@@ -12,6 +12,7 @@ from torch import optim
 from collections import defaultdict
 from lstm.model import RNNModel
 import random
+
 model = GPT2LMHeadModel.from_pretrained('distilgpt2')
 tokenizer = GPT2Tokenizer.from_pretrained('distilgpt2')
 

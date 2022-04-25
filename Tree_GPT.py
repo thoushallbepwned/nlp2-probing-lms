@@ -17,6 +17,7 @@ from ete3 import Tree
 from scipy.sparse.csgraph import minimum_spanning_tree
 from torch import optim
 
+
 tokenizer = GPT2Tokenizer.from_pretrained('distilgpt2')
 model = GPT2LMHeadModel.from_pretrained('distilgpt2')
 
@@ -125,14 +126,20 @@ def calc_uuas(pred_distances, gold_distances):
     gold_distances = gold_distances[:, valid_cols]
     sen_len = gold_distances.shape[0]
     pred_distances = pred_distances[:sen_len,:sen_len]
+    #print("This is how long the sentences is after takinga way the padding", len(pred_distances))
     gold_mst = create_mst(gold_distances)
     pred_mst = create_mst(pred_distances)
     pred_edges = edges(pred_mst)
     gold_edges = edges(gold_mst)
     pred_in_gold = len(pred_edges.intersection(gold_edges))
-    uuas = pred_in_gold/len(gold_distances)
+
+    if len(gold_distances) == 1:
+        #print("found something thats length 0")
+        return None
+    else:
+        uuas = pred_in_gold/len(gold_distances-1)
     
-    return uuas
+        return uuas
 
 class StructuralProbe(nn.Module):
     """ Computes squared L2 distance after projection by a matrix.
@@ -282,6 +289,7 @@ def evaluate_probe(probe, data):
     probe.eval()
     device = torch.device('cpu')
     x, y = data[0], data[1]
+    print("testing the shape of the input here",x.shape, y.shape)
 
     loss_function =  L1DistanceLoss()
     loss_function.eval()
@@ -292,9 +300,14 @@ def evaluate_probe(probe, data):
         length_batch = torch.count_nonzero(x, dim=1)[:,0]
         loss_score, _ = loss_function(output, y, length_batch)
         for i in range(output.shape[0]):
+           # print(len(output[i,:,:]))
             uuas_list.append(calc_uuas(output[i,:,:], y[i,:,:]))
+
+        uuas_list = list(filter(None, uuas_list))
+        print("Printing the uuas list which has length", len(uuas_list))
+        #print(uuas_list)
         uuas_score = sum(uuas_list)/len(uuas_list)
-    
+
     return loss_score, uuas_score
 
 
