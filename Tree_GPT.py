@@ -78,11 +78,12 @@ def parse_corpus(filename):
     return ud_parses
 
 def create_gold_distances(corpus):
+    print("looking at distances now")
     all_distances = []
     sen_length = [len(i) for i in corpus]
     max_length = max(sen_length)
 
-    for item in (corpus):
+    for item in tqdm(corpus):
         tokentree = item.to_tree()
         ete_tree = tokentree_to_ete(tokentree)
 
@@ -277,10 +278,11 @@ def init_corpus_gpt(path, concat=False, cutoff=None):
 
     return embs, gold_distances
 
-def evaluate_probe(probe, embs, distances):
+def evaluate_probe(probe, data):
     probe.eval()
-    x = embs
-    y= distances
+    device = torch.device('cpu')
+    x, y = data[0], data[1]
+
     loss_function =  L1DistanceLoss()
     loss_function.eval()
     uuas_list = []
@@ -297,9 +299,10 @@ def evaluate_probe(probe, embs, distances):
 
 
 # Feel free to alter the signature of this method.
-def train(data, distances, control=False):
-    #device = torch.device('cpu')
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def train(data, dev_data, control=False):
+    device = torch.device('cpu')
+    #device = torch.device('cuda')
+    #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     emb_dim = 768
     rank = 64
@@ -311,17 +314,20 @@ def train(data, distances, control=False):
     optimizer = optim.Adam(probe.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5,patience=1)
     loss_function =  L1DistanceLoss()
-    #x = data.to(device)
+    x, y = data[0], data[1]
     #y = distances.to(device)
     #x = x.to(device)
     #y = y.to(device)
     dev_losses = []
     dev_uuass = []
+    #dev_data = dev_data.to(device)
+    #dev_x, dev_y =dev_data
+    #dev_x =dev_x.to(device)
 
     for epoch in tqdm(range(epochs)):
 
         for i in range(0, len(corpus), batch_size):
-            x_batch, y_batch = data[i:i+batch_size], distances[i:i+batch_size]
+            x_batch, y_batch = x[i:i+batch_size], y[i:i+batch_size]
             x_batch = x_batch.to(device)
             y_batch = y_batch.to(device)
             optimizer.zero_grad()
@@ -333,7 +339,7 @@ def train(data, distances, control=False):
             batch_loss.backward()
             optimizer.step()
         
-        dev_loss, dev_uuas = evaluate_probe(probe, _dev_data, distances)
+        dev_loss, dev_uuas = evaluate_probe(probe, dev_data)
         dev_losses.append(dev_loss)
         dev_uuass.append(dev_uuas)
 
@@ -355,11 +361,12 @@ def train(data, distances, control=False):
     return probe
 
 def create_gold_distances_control(corpus):
+    print("now looking at distances")
     all_distances = []
     sen_length = [len(i) for i in corpus]
     max_length = max(sen_length)
 
-    for item in (corpus):
+    for item in tqdm(corpus):
         tokentree = item.to_tree()
         ete_tree = tokentree_to_ete(tokentree)
 
@@ -423,17 +430,24 @@ def init_corpus_control_gpt(path, concat=False, cutoff=None):
 if __name__ == '__main__':
     "If you wanna run this stuff for the first time youll need to unhash the train_data lines"
     corpus = parse_corpus('data/sample/en_ewt-ud-train.conllu')
-    _dev_data = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    torch.save(_dev_data, "tree_GPT_dev_control.pt")
-    _test_data = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    torch.save(_dev_data, "tree_GPT_test_control.pt")
-    train_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    torch.save(train_data, "tree_GPT_train.pt")
-    train_data_control = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    torch.save(train_data_control, "tree_GPT_train_control.pt")
-    train_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    torch.save(train_data, "tree_GPT_train.pt")
-    train_data_control = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    torch.save(train_data, "tree_GPT_train_control.pt")
-    probe = train(train_data, train_dist)
-    probe_control = train(train_data_control, train_dist_control, True)
+    train_data = torch.load("tree_GPT_train.pt")
+    #print(train_data)
+    _dev_data = torch.load("tree_GPT_dev.pt")
+    _test_data = torch.load("tree_GPT_test.pt")
+    train_data_control = torch.load("tree_GPT_train_control.pt")
+    _dev_data_control = torch.load("tree_GPT_dev_control.pt")
+    _test_data_control = torch.load("tree_GPT_test_control.pt")
+    #_dev_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-dev.conllu'))
+    #torch.save(_dev_data, "tree_GPT_dev.pt")
+    #_test_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
+    #torch.save(_test_data, "tree_GPT_test.pt")
+    #_dev_data = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-dev.conllu'))
+    #torch.save(_dev_data, "tree_GPT_dev_control.pt")
+    #_test_data = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
+    #torch.save(_test_data, "tree_GPT_test_control.pt")
+    #train_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    #torch.save(train_data, "tree_GPT_train.pt")
+    #train_data_control = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    #torch.save(train_data_control, "tree_GPT_train_control.pt")
+    probe = train(train_data, _dev_data)
+    probe_control = train(train_data_control, _dev_data_control, True)
