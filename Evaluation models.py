@@ -11,7 +11,7 @@ from scipy.sparse.csgraph import minimum_spanning_tree
 from torch import optim
 from collections import defaultdict
 from lstm.model import RNNModel
-
+import random
 model = GPT2LMHeadModel.from_pretrained('distilgpt2')
 tokenizer = GPT2Tokenizer.from_pretrained('distilgpt2')
 
@@ -278,8 +278,76 @@ def tokentree_to_ete(tokentree):
 
     return FancyTree(f"{newick_str};")
 
+def create_gold_distances_control(corpus):
+    all_distances = []
+    sen_length = [len(i) for i in corpus]
+    max_length = max(sen_length)
+
+    for item in (corpus):
+        tokentree = item.to_tree()
+        ete_tree = tokentree_to_ete(tokentree)
+
+        sen_len = len(ete_tree.search_nodes())
+        root = int(ete_tree.name)
+        ete_tree = Tree()
+        A = ete_tree.add_child(name=str(0))
+        B = ete_tree.add_child(name=str(sen_len-1))
+        distances = torch.full((max_length, max_length), -1)
+
+        for i in range(1,sen_len-1):
+            if i != root:
+                choice = random.sample(range(3),1)
+                if choice[0] == 0:
+                    A.add_child(name=str(i))
+                if choice[0] == 1:
+                    B.add_child(name=str(i))
+                if choice[0] == 2:
+                    ete_tree.add_child(name=str(i))
+
+        for i in range(sen_len):
+            for j in range(sen_len):
+                if i != root:
+                    node_i = ete_tree&f"{i}"
+                else:
+                    node_i = ete_tree
+                if j != root:
+                    node_j = ete_tree&f"{j}"
+                else:
+                    node_j = ete_tree
+                distances[i][j] = node_i.get_distance(node_j)
+
+        all_distances.append(distances)
+
+    return all_distances
+def init_corpus_control_gpt(path, concat=False, cutoff=None):
+    """ Initialises the data of a corpus.
+
+    Parameters
+    ----------
+    path : str
+        Path to corpus location
+    concat : bool, optional
+        Optional toggle to concatenate all the tensors
+        returned by `fetch_sen_reps`.
+    cutoff : int, optional
+        Optional integer to "cutoff" the data in the corpus.
+        This allows only a subset to be used, alleviating
+        memory usage.
+    """
+    corpus = parse_corpus(path)[:cutoff]
+
+    embs = fetch_sen_reps_tree(corpus, model, tokenizer, concat=concat)
+    gold_distances = torch.stack(create_gold_distances_control(corpus))
+    torch.save(embs, "tree_rep_control.pt")
+    torch.save(gold_distances, "tree_rep_control_distance.pt")
+
+    return embs, gold_distances
+
+
 #_test_data_gpt = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
-#torch.save(_test_data_gpt, "test_data_gpt.pt")
+_test_data_gpt = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
+
+torch.save(_test_data_gpt, "test_data_gpt_control.pt")
 
 def evaluation(data, model):
     test_data = torch.load(data)
@@ -292,7 +360,10 @@ def evaluation(data, model):
     print("The test loss for the model is", test_loss)
     return
 
-evaluation('test_data_gpt.pt', "Tree_GPT_local.pt")
+
+
+evaluation('test_data_gpt.pt', "Tree_GPT_local_cpu.pt")
+evaluation('test_data_gpt_control.pt', "Tree_GPT_control_local_cpu.pt")
 
 #_test_data_gpt = torch.load('test_data_gpt.pt')
 #probe_gpt = torch.load("Tree_GPT_local.pt", map_location=torch.device('cpu'))
