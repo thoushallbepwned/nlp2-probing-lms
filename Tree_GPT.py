@@ -17,7 +17,6 @@ from ete3 import Tree
 from scipy.sparse.csgraph import minimum_spanning_tree
 from torch import optim
 
-
 tokenizer = GPT2Tokenizer.from_pretrained('distilgpt2')
 model = GPT2LMHeadModel.from_pretrained('distilgpt2')
 
@@ -79,12 +78,11 @@ def parse_corpus(filename):
     return ud_parses
 
 def create_gold_distances(corpus):
-    print("looking at distances now")
     all_distances = []
     sen_length = [len(i) for i in corpus]
     max_length = max(sen_length)
 
-    for item in tqdm(corpus):
+    for item in corpus:
         tokentree = item.to_tree()
         ete_tree = tokentree_to_ete(tokentree)
 
@@ -126,20 +124,17 @@ def calc_uuas(pred_distances, gold_distances):
     gold_distances = gold_distances[:, valid_cols]
     sen_len = gold_distances.shape[0]
     pred_distances = pred_distances[:sen_len,:sen_len]
-    #print("This is how long the sentences is after takinga way the padding", len(pred_distances))
     gold_mst = create_mst(gold_distances)
     pred_mst = create_mst(pred_distances)
     pred_edges = edges(pred_mst)
     gold_edges = edges(gold_mst)
     pred_in_gold = len(pred_edges.intersection(gold_edges))
-
-    if len(gold_distances) == 1:
-        #print("found something thats length 0")
-        return None
-    else:
-        uuas = pred_in_gold/len(gold_distances-1)
+    try:
+        uuas = pred_in_gold/len(gold_edges)
+    except:
+        return 999
     
-        return uuas
+    return uuas
 
 class StructuralProbe(nn.Module):
     """ Computes squared L2 distance after projection by a matrix.
@@ -226,7 +221,7 @@ def fetch_sen_reps_tree(ud_parses: List[TokenList], model, tokenizer, concat=Fal
     sen_length = [len(i) for i in ud_parses]
     max_length = max(sen_length)
     
-    for sentence in tqdm(ud_parses):
+    for sentence in ud_parses:
         j = 0
         concat_dict = {}
         token_list = []
@@ -285,13 +280,11 @@ def init_corpus_gpt(path, concat=False, cutoff=None):
 
     return embs, gold_distances
 
-def evaluate_probe(probe, data):
+def evaluate_probe(probe, _data):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     probe.eval()
-    device = torch.device('cpu')
-    x, y = data[0], data[1]
-    print("testing the shape of the input here",x.shape, y.shape)
-
-    loss_function =  L1DistanceLoss()
+    x, y = _data
+    loss_function = L1DistanceLoss()
     loss_function.eval()
     uuas_list = []
     
@@ -300,46 +293,40 @@ def evaluate_probe(probe, data):
         length_batch = torch.count_nonzero(x, dim=1)[:,0]
         loss_score, _ = loss_function(output, y, length_batch)
         for i in range(output.shape[0]):
-           # print(len(output[i,:,:]))
-            uuas_list.append(calc_uuas(output[i,:,:], y[i,:,:]))
-
-        uuas_list = list(filter(None, uuas_list))
-        print("Printing the uuas list which has length", len(uuas_list))
-        #print(uuas_list)
+            uuas = calc_uuas(output[i,:,:], y[i,:,:])
+            if uuas != 999:
+                uuas_list.append(uuas)
         uuas_score = sum(uuas_list)/len(uuas_list)
-
+    
     return loss_score, uuas_score
 
 
 # Feel free to alter the signature of this method.
-def train(data, dev_data, control=False):
-    device = torch.device('cpu')
-    #device = torch.device('cuda')
-    #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def train(_data, control=False):
+    #device = torch.device('cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     emb_dim = 768
     rank = 64
     lr = 10e-4
-    batch_size = 8
+    batch_size = 24
     epochs = 200
 
     probe = StructuralProbe(emb_dim, rank, device=device)
     optimizer = optim.Adam(probe.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5,patience=1)
     loss_function =  L1DistanceLoss()
-    x, y = data[0], data[1]
+    x, y = _data
+    #x = data.to(device)
     #y = distances.to(device)
     #x = x.to(device)
     #y = y.to(device)
     dev_losses = []
     dev_uuass = []
-    #dev_data = dev_data.to(device)
-    #dev_x, dev_y =dev_data
-    #dev_x =dev_x.to(device)
 
-    for epoch in tqdm(range(epochs)):
+    for epoch in range(epochs):
 
-        for i in range(0, len(corpus), batch_size):
+        for i in range(0, x.shape[0], batch_size):
             x_batch, y_batch = x[i:i+batch_size], y[i:i+batch_size]
             x_batch = x_batch.to(device)
             y_batch = y_batch.to(device)
@@ -352,34 +339,33 @@ def train(data, dev_data, control=False):
             batch_loss.backward()
             optimizer.step()
         
-        dev_loss, dev_uuas = evaluate_probe(probe, dev_data)
-        dev_losses.append(dev_loss)
-        dev_uuass.append(dev_uuas)
+        # dev_loss, dev_uuas = evaluate_probe(probe, _dev_data, distances)
+        # dev_losses.append(dev_loss)
+        # dev_uuass.append(dev_uuas)
 
         # Using a scheduler is up to you, and might require some hyper param fine-tuning
         #scheduler.step(dev_loss)  
     
-        if epoch % 20 == 0 :
-            print(epoch)
-            model.eval()
+    #     if epoch % 20 == 0 :
+    #         print(epoch)
 
-            print(f"Validation loss on batch {epoch}: {dev_loss}")
-            print(f"UUA on batch {epoch}: {dev_uuas}")
+    #         print(f"Validation loss on batch {epoch}: {dev_loss}")
+    #         print(f"UUA on batch {epoch}: {dev_uuas}")
         
     # test_loss, test_uuas = evaluate_probe(probe, _test_data)
+    # print(test_uuas)
     if control:
-        torch.save(probe, "Tree_GPT_control_local.pt")
+        torch.save(probe, "Tree_GPT_control.pt")
     else:
-        torch.save(probe, "Tree_GPT_local.pt")
+        torch.save(probe, "Tree_GPT.pt")
     return probe
 
 def create_gold_distances_control(corpus):
-    print("now looking at distances")
     all_distances = []
     sen_length = [len(i) for i in corpus]
     max_length = max(sen_length)
 
-    for item in tqdm(corpus):
+    for item in corpus:
         tokentree = item.to_tree()
         ete_tree = tokentree_to_ete(tokentree)
 
@@ -435,8 +421,6 @@ def init_corpus_control_gpt(path, concat=False, cutoff=None):
 
     embs = fetch_sen_reps_tree(corpus, model, tokenizer, concat=concat)
     gold_distances = torch.stack(create_gold_distances_control(corpus))
-    #torch.save(embs, "tree_rep_control.pt")
-    #torch.save(gold_distances, "tree_rep_control_distance.pt")
 
     return embs, gold_distances
 
@@ -444,23 +428,7 @@ if __name__ == '__main__':
     "If you wanna run this stuff for the first time youll need to unhash the train_data lines"
     corpus = parse_corpus('data/sample/en_ewt-ud-train.conllu')
     train_data = torch.load("tree_GPT_train.pt")
-    #print(train_data)
-    _dev_data = torch.load("tree_GPT_dev.pt")
-    _test_data = torch.load("tree_GPT_test.pt")
-    train_data_control = torch.load("tree_GPT_train_control.pt")
-    _dev_data_control = torch.load("tree_GPT_dev_control.pt")
-    _test_data_control = torch.load("tree_GPT_test_control.pt")
-    #_dev_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-dev.conllu'))
-    #torch.save(_dev_data, "tree_GPT_dev.pt")
-    #_test_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
-    #torch.save(_test_data, "tree_GPT_test.pt")
-    #_dev_data = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-dev.conllu'))
-    #torch.save(_dev_data, "tree_GPT_dev_control.pt")
-    #_test_data = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-test.conllu'))
-    #torch.save(_test_data, "tree_GPT_test_control.pt")
-    #train_data = init_corpus_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    #torch.save(train_data, "tree_GPT_train.pt")
-    #train_data_control = init_corpus_control_gpt(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    #torch.save(train_data_control, "tree_GPT_train_control.pt")
-    probe = train(train_data, _dev_data)
-    probe_control = train(train_data_control, _dev_data_control, True)
+    probe = train(train_data)
+    train_data_control = init_corpus_control_gpt('data/en_ewt-ud-train.conllu')
+    torch.save(train_data_control, "tree_GPT_train_control.pt")
+    probe_control = train(train_data_control, True)

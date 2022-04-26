@@ -260,10 +260,7 @@ def init_corpus_lstm(path, concat=False, cutoff=None):
     corpus = parse_corpus(path)[:cutoff]
 
     embs = fetch_sen_reps_lstm_tree(corpus, lstm, vocab)
-    print("moving on to getting distances")
     gold_distances = torch.stack(create_gold_distances(corpus))
-    torch.save(embs, "tree_rep_lstm.pt")
-    torch.save(gold_distances, "tree_rep_lstm_distance.pt")
     return embs, gold_distances
 
 def evaluate_probe(probe, _data):
@@ -285,7 +282,7 @@ def evaluate_probe(probe, _data):
 
 
 # Feel free to alter the signature of this method.
-def train(embs, distances, control=False):
+def train(_data, control=False):
     #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     device = torch.device('cpu')
     emb_dim = 650
@@ -298,14 +295,13 @@ def train(embs, distances, control=False):
     optimizer = optim.Adam(probe.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5,patience=1)
     loss_function =  L1DistanceLoss()
-    x =embs
-    y = distances
+    x, y = _data
     dev_losses = []
     dev_uuass = []
 
-    for epoch in tqdm(range(epochs)):
+    for epoch in range(epochs):
 
-        for i in range(0, len(corpus), batch_size):
+        for i in range(0, x.shape[0], batch_size):
             x_batch, y_batch = x[i:i+batch_size], y[i:i+batch_size]
             x_batch = x_batch.to(device)
             y_batch = y_batch.to(device)
@@ -318,20 +314,20 @@ def train(embs, distances, control=False):
             batch_loss.backward()
             optimizer.step()
         
-         dev_loss, dev_uuas = evaluate_probe(probe, _dev_data)
-         dev_losses.append(dev_loss)
-         dev_uuass.append(dev_uuas)
+        #  dev_loss, dev_uuas = evaluate_probe(probe, _dev_data)
+        #  dev_losses.append(dev_loss)
+        #  dev_uuass.append(dev_uuas)
 
-        # Using a scheduler is up to you, and might require some hyper param fine-tuning
-        #scheduler.step(dev_loss)  
+        # # Using a scheduler is up to you, and might require some hyper param fine-tuning
+        # #scheduler.step(dev_loss)  
     
-        if epoch % 20 == 0 :
+        # if epoch % 20 == 0 :
 
-            print(epoch)
-            model.eval()
+        #     print(epoch)
+        #     model.eval()
 
-            print(f"Validation loss on batch {epoch}: {dev_loss}")
-            print(f"UUA on batch {epoch}: {dev_uuas}")
+        #     print(f"Validation loss on batch {epoch}: {dev_loss}")
+        #     print(f"UUA on batch {epoch}: {dev_uuas}")
         
     # test_loss, test_uuas = evaluate_probe(probe, _test_data)
     if control:
@@ -401,19 +397,13 @@ def init_corpus_control_lstm(path, concat=False, cutoff=None):
 
     embs = fetch_sen_reps_lstm_tree(corpus, lstm, vocab)    
     gold_distances = torch.stack(create_gold_distances_control(corpus))
-    torch.save(embs, "tree_rep_control_lstm.pt")
-    torch.save(gold_distances, "tree_rep_control_lstm_distance.pt")
     return embs, gold_distances
 
 
 if __name__ == '__main__':
-    corpus = parse_corpus('data/sample/en_ewt-ud-train.conllu')
-    train_data = torch.load("tree_rep_lstm.pt")
-    train_dist = torch.load("tree_rep_lstm_distance.pt")
-    train_data_control = torch.load('tree_rep_control_lstm.pt')
-    train_dist_control = torch.load('tree_rep_control_lstm_distance.pt')
-
-    #train_data = init_corpus_lstm(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    #train_data_control = init_corpus_control_lstm(os.path.join('', 'data/en_ewt-ud-train.conllu'))
-    probe = train(train_data, train_dist)
-    probe_control = train(train_data_control, train_dist_control, True)
+    train_data = init_corpus_lstm(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    torch.save(train_data, "tree_LSTM_train.pt")
+    probe = train(train_data)
+    train_data_control = init_corpus_control_lstm(os.path.join('', 'data/en_ewt-ud-train.conllu'))
+    torch.save(train_data_control, "tree_LSTM_train_control.pt")
+    probe_control = train(train_data_control, True)
