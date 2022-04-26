@@ -117,10 +117,11 @@ def edges(mst):
 
     return edges
 
+
 def calc_uuas(pred_distances, gold_distances):
-    
-    gold_distances = gold_distances[gold_distances[0,:] != -1]
-    valid_cols = [col_idx for col_idx, col in enumerate(torch.split(gold_distances, 1, dim=1)) if not torch.all(col == -1)]
+    gold_distances = gold_distances[gold_distances[0, :] != -1]
+    valid_cols = [col_idx for col_idx, col in enumerate(torch.split(gold_distances, 1, dim=1)) if
+                  not torch.all(col == -1)]
     gold_distances = gold_distances[:, valid_cols]
     sen_len = gold_distances.shape[0]
     pred_distances = pred_distances[:sen_len,:sen_len]
@@ -287,10 +288,10 @@ def evaluate_probe(probe, _data):
     loss_function = L1DistanceLoss()
     loss_function.eval()
     uuas_list = []
-    
+
     with torch.no_grad():
         output = probe(x)
-        length_batch = torch.count_nonzero(x, dim=1)[:,0]
+        length_batch = torch.count_nonzero(x, dim=1)[:, 0]
         loss_score, _ = loss_function(output, y, length_batch)
         for i in range(output.shape[0]):
             uuas = calc_uuas(output[i,:,:], y[i,:,:])
@@ -299,7 +300,6 @@ def evaluate_probe(probe, _data):
         uuas_score = sum(uuas_list)/len(uuas_list)
     
     return loss_score, uuas_score
-
 
 # Feel free to alter the signature of this method.
 def train(_data, control=False):
@@ -335,6 +335,7 @@ def train(_data, control=False):
             output = probe(x_batch)
             length_batch = torch.count_nonzero(x_batch, dim=1)
             batch_loss, _ = loss_function(output, y_batch, length_batch[:,0])
+            #print(batch_loss)
 
             batch_loss.backward()
             optimizer.step()
